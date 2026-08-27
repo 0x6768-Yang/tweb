@@ -17,46 +17,43 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
+  deployments: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          
+
       - name: Install dependencies
         run: npm ci --silent
-        
+
       - name: Create config
         run: |
           echo "TELEGRAM_API_ID=${{ github.event.inputs.api_id }}" > .env
           echo "TELEGRAM_API_HASH=${{ github.event.inputs.api_hash }}" >> .env
           echo "BASE_URL=${{ github.event.inputs.domain }}" >> .env
-          
+
       - name: Build
         run: npm run build:production
-        
-      - name: Create ZIP package
+
+      - name: Install Wrangler
+        run: npm i -g wrangler
+
+      - name: Deploy to Cloudflare Pages
         run: |
-          cd dist
-          zip -r "../telegram-web-$(date +'%Y%m%d-%H%M%S').zip" ./*
-          cd ..
-        
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.0
-          name: Release v1.0.0
-          body: Telegram Web 部署包
-          draft: false
-          prerelease: false
-          files: |
-            *.zip
-          generate_release_notes: false
+          wrangler pages deploy ./dist \
+            --project-name="${{ secrets.CF_PROJECT_NAME }}" \
+            --commit-hash="${{ github.sha }}" \
+            --branch="${GITHUB_REF#refs/heads/}"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
