@@ -1,5 +1,4 @@
 import type { FC } from '../../../../lib/teact/teact';
-import type React from '../../../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../../lib/teact/teact';
@@ -30,6 +29,7 @@ import { renderTextWithEntities } from '../../../common/helpers/renderTextWithEn
 
 import { selectChatFilters } from '../../../../hooks/reducers/useFoldersReducer';
 import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useLang from '../../../../hooks/useLang';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
 import { getPeerColorClass } from '../../../../hooks/usePeerColor';
@@ -39,6 +39,8 @@ import FolderIcon from '../../../common/FolderIcon';
 import GroupChatInfo from '../../../common/GroupChatInfo';
 import Icon from '../../../common/icons/Icon';
 import PrivateChatInfo from '../../../common/PrivateChatInfo';
+import Island, { IslandDescription, IslandOutside, IslandTitle } from '../../../gili/layout/Island';
+import Surface from '../../../gili/layout/Surface';
 import FloatingActionButton from '../../../ui/FloatingActionButton';
 import InputText from '../../../ui/InputText';
 import ListItem from '../../../ui/ListItem';
@@ -166,7 +168,8 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
     loadedActiveChatIds, loadedArchivedChatIds,
   ]);
 
-  const lang = useOldLang();
+  const oldLang = useOldLang();
+  const lang = useLang();
 
   useHistoryBack({
     isActive,
@@ -253,7 +256,7 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
 
     // Ignoring global updates is a known drawback here
     if (!selectCanShareFolder(getGlobal(), state.folderId!)) {
-      showNotification({ message: lang('ChatList.Filter.InviteLink.IncludeExcludeError') });
+      showNotification({ message: oldLang('ChatList.Filter.InviteLink.IncludeExcludeError') });
       return;
     }
 
@@ -278,7 +281,7 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
     });
   }, [
     invites, state.folderId, state.isTouched, chatListCount, maxInviteLinks, isCreating, onSaveFolder,
-    onShareFolder, lang, maxChatLists, state.folder.isChatList,
+    onShareFolder, oldLang, maxChatLists, state.folder.isChatList,
   ]);
 
   const handleEditInviteClick = useCallback((e: React.MouseEvent<HTMLElement>, url: string) => {
@@ -349,7 +352,7 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
             onClick={clickHandler}
             icon="down"
           >
-            {lang('FilterShowMoreChats', leftChatsCount, 'i')}
+            {oldLang('FilterShowMoreChats', leftChatsCount, 'i')}
           </ListItem>
         )}
       </>
@@ -379,8 +382,8 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="settings-fab-wrapper">
-      <div className="settings-content no-border custom-scroll">
-        <div className="settings-content-header">
+      <Surface scrollable className="settings-content no-border">
+        <IslandOutside className="settings-content-header settings-folders-header">
           <AnimatedIconWithPreview
             size={STICKER_SIZE_FOLDER_SETTINGS}
             tgsUrl={LOCAL_TGS_URLS.FoldersNew}
@@ -393,9 +396,9 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
               {lang('FilterIncludeInfo')}
             </p>
           )}
-          <div className="settings-folders-input-container">
+          <Island className="settings-folders-input-container">
             <InputText
-              className={buildClassName('mb-0', !isMobile && 'settings-folders-input-with-icon')}
+              className={buildClassName(!isMobile && 'settings-folders-input-with-icon')}
               label={lang('FilterNameHint')}
               value={titleText}
               maxLength={folderTitleMaxLength}
@@ -422,67 +425,69 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
                 />
               </div>
             )}
-          </div>
-        </div>
+          </Island>
+        </IslandOutside>
 
         {!isOnlyInvites && (
-          <div className="settings-item">
+          <>
             {state.error && state.error === ERROR_NO_CHATS && (
-              <p className="settings-item-description color-danger mb-2" dir={lang.isRtl ? 'rtl' : undefined}>
-                {lang(state.error)}
-              </p>
+              <IslandDescription className="color-danger" dir={lang.isRtl ? 'rtl' : undefined}>
+                {oldLang(state.error)}
+              </IslandDescription>
             )}
 
-            <h4 className="settings-item-header mb-3" dir={lang.isRtl ? 'rtl' : undefined}>{lang('FilterInclude')}</h4>
+            <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{lang('FilterInclude')}</IslandTitle>
+            <Island>
+              <ListItem
+                className="settings-folders-list-item color-primary"
+                icon="add"
+                narrow
+                onClick={onAddIncludedChats}
+              >
+                {lang('FilterAddChats')}
+              </ListItem>
 
-            <ListItem
-              className="settings-folders-list-item color-primary"
-              icon="add"
-              narrow
-              onClick={onAddIncludedChats}
-            >
-              {lang('FilterAddChats')}
-            </ListItem>
-
-            {renderChats('included')}
-          </div>
+              {renderChats('included')}
+            </Island>
+          </>
         )}
 
         {!isOnlyInvites && !isEditingChatList && (
-          <div className="settings-item pt-3">
-            <h4 className="settings-item-header mb-3" dir={lang.isRtl ? 'rtl' : undefined}>{lang('FilterExclude')}</h4>
+          <>
+            <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{lang('FilterExclude')}</IslandTitle>
+            <Island>
+              <ListItem
+                className="settings-folders-list-item color-primary"
+                icon="add"
+                narrow
+                onClick={onAddExcludedChats}
+              >
+                {lang('FilterAddChats')}
+              </ListItem>
 
-            <ListItem
-              className="settings-folders-list-item color-primary"
-              icon="add"
-              narrow
-              onClick={onAddExcludedChats}
-            >
-              {lang('FilterAddChats')}
-            </ListItem>
-
-            {renderChats('excluded')}
-          </div>
+              {renderChats('excluded')}
+            </Island>
+          </>
         )}
 
-        <div className="settings-item pt-3">
-          <h4 className="settings-item-header mb-3 color-picker-header" dir={lang.isRtl ? 'rtl' : undefined}>
-            <span className="color-picker-title-text">{lang('FilterColorTitle')}</span>
-            <div className={buildClassName(
-              'color-picker-title',
-              'color-picker-selected-color',
-              isCurrentUserPremium && state.folder.color !== undefined && state.folder.color !== -1
-                ? getPeerColorClass(state.folder.color)
-                : 'color-picker-item-disabled',
-            )}
-            >
-              {renderTextWithEntities({
-                text: state.folder.title.text,
-                entities: state.folder.title.entities,
-                noCustomEmojiPlayback: state.folder.noTitleAnimations,
-              })}
-            </div>
-          </h4>
+        <IslandTitle className="color-picker-header" dir={lang.isRtl ? 'rtl' : undefined}>
+          <span className="color-picker-title-text">{lang('FilterColorTitle')}</span>
+          <div className={buildClassName(
+            'color-picker-title',
+            'color-picker-selected-color',
+            isCurrentUserPremium && state.folder.color !== undefined && state.folder.color !== -1
+              ? getPeerColorClass(state.folder.color)
+              : 'color-picker-item-disabled',
+          )}
+          >
+            {renderTextWithEntities({
+              text: state.folder.title.text,
+              entities: state.folder.title.entities,
+              noCustomEmojiPlayback: state.folder.noTitleAnimations,
+            })}
+          </div>
+        </IslandTitle>
+        <Island>
           <div className="color-picker custom-scroll-x">
             {FOLDER_COLORS.map((color) => (
               <button
@@ -528,23 +533,22 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
               )}
             </button>
           </div>
-          <p className="settings-item-description mb-0 mt-3" dir={lang.isRtl ? 'rtl' : undefined}>
-            {lang('FilterColorHint')}
-          </p>
-        </div>
+        </Island>
+        <IslandDescription dir={lang.isRtl ? 'rtl' : undefined}>
+          {lang('FilterColorHint')}
+        </IslandDescription>
 
-        <div className="settings-item pt-3">
-          <h4 className="settings-item-header mb-3" dir={lang.isRtl ? 'rtl' : undefined}>
-            {lang('FolderLinkScreen.Title')}
-          </h4>
-
+        <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
+          {oldLang('FolderLinkScreen.Title')}
+        </IslandTitle>
+        <Island>
           <ListItem
             className="settings-folders-list-item color-primary"
             icon="add"
             narrow
             onClick={handleCreateInviteClick}
           >
-            {lang('ChatListFilter.CreateLinkNew')}
+            {oldLang('ChatListFilter.CreateLinkNew')}
           </ListItem>
 
           {invites?.map((invite) => (
@@ -558,13 +562,12 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
             >
               <span className="title" dir="auto">{invite.title || invite.url}</span>
               <span className="subtitle">
-                {lang('ChatListFilter.LinkLabelChatCount', invite.peerIds.length, 'i')}
+                {oldLang('ChatListFilter.LinkLabelChatCount', invite.peerIds.length, 'i')}
               </span>
             </ListItem>
           ))}
-
-        </div>
-      </div>
+        </Island>
+      </Surface>
 
       <FloatingActionButton
         isShown={Boolean(state.isTouched)}

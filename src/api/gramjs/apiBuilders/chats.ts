@@ -22,14 +22,16 @@ import {
   type ApiSponsoredPeer,
   type ApiStarsSubscriptionPricing,
   type ApiThreadInfo,
+  type ApiTypingStatus,
   MAIN_THREAD_ID,
 } from '../../types';
 
 import { omitUndefined, pickTruthy } from '../../../util/iteratees';
 import { toJSNumber } from '../../../util/numbers';
-import { getServerTimeOffset } from '../../../util/serverTime';
+import { getServerTime } from '../../../util/serverTime';
 import { addPhotoToLocalDb, addUserToLocalDb } from '../helpers/localDb';
 import { serializeBytes } from '../helpers/misc';
+import { buildApiBotCommand } from './bots';
 import {
   buildApiFormattedText, buildApiPhoto, buildApiUsernames,
 } from './common';
@@ -59,6 +61,7 @@ function buildApiChatFieldsFromPeerEntity(
 ): PeerEntityApiChatFields {
   const user = peerEntity instanceof GramJs.User ? peerEntity : undefined;
   const channel = peerEntity instanceof GramJs.Channel ? peerEntity : undefined;
+  const community = peerEntity instanceof GramJs.Community ? peerEntity : undefined;
 
   const userOrChannel = user || channel;
 
@@ -91,6 +94,7 @@ function buildApiChatFieldsFromPeerEntity(
   const profileColor = userOrChannel?.profileColor ? buildApiPeerColor(userOrChannel.profileColor) : undefined;
   const emojiStatus = userOrChannel?.emojiStatus ? buildApiEmojiStatus(userOrChannel.emojiStatus) : undefined;
   const paidMessagesStars = userOrChannel?.sendPaidMessagesStars;
+  const linkedCommunityId = userOrChannel?.linkedCommunityId;
   const isVerified = userOrChannel?.verified;
   const isForum = channel?.forum || user?.botForumView;
 
@@ -122,6 +126,9 @@ function buildApiChatFieldsFromPeerEntity(
     isMonoforum: channel?.monoforum,
     linkedMonoforumId: channel?.linkedMonoforumId !== undefined
       ? buildApiPeerId(channel.linkedMonoforumId, 'channel') : undefined,
+    linkedCommunityId: linkedCommunityId !== undefined
+      ? buildApiPeerId(linkedCommunityId, 'channel') : undefined,
+    isCollapsedInDialogs: community?.collapsedInDialogs,
     areChannelMessagesAllowed: channel?.broadcastMessagesAllowed,
     areStoriesHidden,
     maxStoryId,
@@ -147,7 +154,7 @@ export function buildApiChatFromDialog(
   peerEntity: GramJs.TypeUser | GramJs.TypeChat,
 ): ApiChat {
   const {
-    peer, folderId, viewForumAsMessages,
+    peer, folderId, viewForumAsMessages, ttlPeriod,
   } = dialog;
 
   return {
@@ -156,6 +163,7 @@ export function buildApiChatFromDialog(
     type: getApiChatTypeFromPeerEntity(peerEntity),
     title: getApiChatTitleFromMtpPeer(peer, peerEntity),
     isForumAsMessages: viewForumAsMessages,
+    ttlPeriod,
     ...buildApiChatFieldsFromPeerEntity(peerEntity),
   };
 }
@@ -179,7 +187,10 @@ function buildApiChatPermissions(peerEntity: GramJs.TypeUser | GramJs.TypeChat):
   currentUserBannedRights?: ApiChatBannedRights;
   defaultBannedRights?: ApiChatBannedRights;
 } {
-  if (!(peerEntity instanceof GramJs.Chat || peerEntity instanceof GramJs.Channel)) {
+  if (!(
+    peerEntity instanceof GramJs.Chat || peerEntity instanceof GramJs.Channel
+    || peerEntity instanceof GramJs.Community
+  )) {
     return {};
   }
 
@@ -206,7 +217,7 @@ function buildApiChatRestrictions(peerEntity: Entity): {
     };
   }
 
-  if (peerEntity instanceof GramJs.ChannelForbidden) {
+  if (peerEntity instanceof GramJs.ChannelForbidden || peerEntity instanceof GramJs.CommunityForbidden) {
     return {
       isRestricted: true,
     };
@@ -243,7 +254,7 @@ function buildApiChatRestrictions(peerEntity: Entity): {
     });
   }
 
-  if (peerEntity instanceof GramJs.Channel) {
+  if (peerEntity instanceof GramJs.Channel || peerEntity instanceof GramJs.Community) {
     Object.assign(restrictions, {
       // `left` is weirdly set to `true` on all channels never joined before
       isNotJoined: peerEntity.left,
@@ -298,7 +309,7 @@ export function buildApiChatFromPreview(
   };
 }
 
-export function getApiChatTypeFromPeerEntity(peerEntity: GramJs.TypeChat | GramJs.TypeUser) {
+export function getApiChatTypeFromPeerEntity(peerEntity: GramJs.TypeChat | GramJs.TypeUser): ApiChat['type'] {
   if (peerEntity instanceof GramJs.User || peerEntity instanceof GramJs.UserEmpty) {
     return 'chatTypePrivate';
   } else if (
@@ -307,6 +318,11 @@ export function getApiChatTypeFromPeerEntity(peerEntity: GramJs.TypeChat | GramJ
     || peerEntity instanceof GramJs.ChatEmpty
   ) {
     return 'chatTypeBasicGroup';
+  } else if (
+    peerEntity instanceof GramJs.Community
+    || peerEntity instanceof GramJs.CommunityForbidden
+  ) {
+    return 'chatTypeCommunity';
   } else {
     return peerEntity.megagroup ? 'chatTypeSuperGroup' : 'chatTypeChannel';
   }
@@ -382,52 +398,73 @@ export function buildChatMembers(
 
 export function buildChatTypingStatus(
   update: GramJs.UpdateUserTyping | GramJs.UpdateChatUserTyping | GramJs.UpdateChannelUserTyping,
-) {
-  let action: string = '';
-  let emoticon: string | undefined;
-  if (update.action instanceof GramJs.SendMessageCancelAction) {
+): ApiTypingStatus | undefined {
+  const action = update.action;
+  const timestamp = getServerTime();
+  const buildTypingStatus = (
+    type: Exclude<ApiTypingStatus['type'], 'watchingAnimations'>,
+  ): ApiTypingStatus => ({
+    timestamp,
+    type,
+  });
+
+  if (action instanceof GramJs.SendMessageCancelAction) {
     return undefined;
-  } else if (update.action instanceof GramJs.SendMessageTypingAction) {
-    action = 'lng_user_typing';
-  } else if (update.action instanceof GramJs.SendMessageRecordVideoAction) {
-    action = 'lng_send_action_record_video';
-  } else if (update.action instanceof GramJs.SendMessageUploadVideoAction) {
-    action = 'lng_send_action_upload_video';
-  } else if (update.action instanceof GramJs.SendMessageRecordAudioAction) {
-    action = 'lng_send_action_record_audio';
-  } else if (update.action instanceof GramJs.SendMessageUploadAudioAction) {
-    action = 'lng_send_action_upload_audio';
-  } else if (update.action instanceof GramJs.SendMessageUploadPhotoAction) {
-    action = 'lng_send_action_upload_photo';
-  } else if (update.action instanceof GramJs.SendMessageUploadDocumentAction) {
-    action = 'lng_send_action_upload_file';
-  } else if (update.action instanceof GramJs.SendMessageGeoLocationAction) {
-    action = 'selecting a location to share';
-  } else if (update.action instanceof GramJs.SendMessageChooseContactAction) {
-    action = 'selecting a contact to share';
-  } else if (update.action instanceof GramJs.SendMessageGamePlayAction) {
-    action = 'lng_playing_game';
-  } else if (update.action instanceof GramJs.SendMessageRecordRoundAction) {
-    action = 'lng_send_action_record_round';
-  } else if (update.action instanceof GramJs.SendMessageUploadRoundAction) {
-    action = 'lng_send_action_upload_round';
-  } else if (update.action instanceof GramJs.SendMessageChooseStickerAction) {
-    action = 'lng_send_action_choose_sticker';
-  } else if (update.action instanceof GramJs.SpeakingInGroupCallAction) {
+  }
+  if (action instanceof GramJs.SendMessageTypingAction) {
+    return buildTypingStatus('typing');
+  }
+  if (action instanceof GramJs.SendMessageRecordVideoAction) {
+    return buildTypingStatus('recordVideo');
+  }
+  if (action instanceof GramJs.SendMessageUploadVideoAction) {
+    return buildTypingStatus('uploadVideo');
+  }
+  if (action instanceof GramJs.SendMessageRecordAudioAction) {
+    return buildTypingStatus('recordAudio');
+  }
+  if (action instanceof GramJs.SendMessageUploadAudioAction) {
+    return buildTypingStatus('uploadAudio');
+  }
+  if (action instanceof GramJs.SendMessageUploadPhotoAction) {
+    return buildTypingStatus('uploadPhoto');
+  }
+  if (action instanceof GramJs.SendMessageUploadDocumentAction) {
+    return buildTypingStatus('uploadFile');
+  }
+  if (action instanceof GramJs.SendMessageGeoLocationAction) {
+    return buildTypingStatus('chooseLocation');
+  }
+  if (action instanceof GramJs.SendMessageChooseContactAction) {
+    return buildTypingStatus('chooseContact');
+  }
+  if (action instanceof GramJs.SendMessageGamePlayAction) {
+    return buildTypingStatus('playingGame');
+  }
+  if (action instanceof GramJs.SendMessageRecordRoundAction) {
+    return buildTypingStatus('recordRound');
+  }
+  if (action instanceof GramJs.SendMessageUploadRoundAction) {
+    return buildTypingStatus('uploadRound');
+  }
+  if (action instanceof GramJs.SendMessageChooseStickerAction) {
+    return buildTypingStatus('chooseSticker');
+  }
+  if (action instanceof GramJs.SpeakingInGroupCallAction) {
     return undefined;
-  } else if (update.action instanceof GramJs.SendMessageEmojiInteractionSeen) {
-    action = 'lng_user_action_watching_animations';
-    emoticon = update.action.emoticon;
-  } else if (update.action instanceof GramJs.SendMessageEmojiInteraction) {
+  }
+  if (action instanceof GramJs.SendMessageEmojiInteractionSeen) {
+    return {
+      timestamp,
+      type: 'watchingAnimations',
+      emoji: action.emoticon,
+    };
+  }
+  if (action instanceof GramJs.SendMessageEmojiInteraction) {
     return undefined;
   }
 
-  return {
-    action,
-    ...(emoticon && { emoji: emoticon }),
-    ...(!(update instanceof GramJs.UpdateUserTyping) && { userId: getApiChatIdFromMtpPeer(update.fromId) }),
-    timestamp: Date.now() + getServerTimeOffset() * 1000,
-  };
+  return undefined;
 }
 
 export function buildApiChatFolder(filter: GramJs.DialogFilter | GramJs.DialogFilterChatlist): ApiChatFolder {
@@ -480,10 +517,7 @@ export function buildApiChatBotCommands(botInfos: GramJs.BotInfo[]) {
     const botId = buildApiPeerId(botInfo.userId!, 'user');
 
     if (botInfo.commands) {
-      botCommands = botCommands.concat(botInfo.commands.map((mtpCommand) => ({
-        botId,
-        ...omitVirtualClassFields(mtpCommand),
-      })));
+      botCommands = botCommands.concat(botInfo.commands.map((command) => buildApiBotCommand(botId, command)));
     }
 
     return botCommands;

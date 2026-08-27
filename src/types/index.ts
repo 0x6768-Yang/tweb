@@ -16,6 +16,7 @@ import type {
   ApiFakeType,
   ApiFormattedText,
   ApiInputReplyInfo,
+  ApiInputRichMessage,
   ApiInputSuggestedPostInfo,
   ApiLabeledPrice,
   ApiMediaFormat,
@@ -23,6 +24,8 @@ import type {
   ApiMessageEntity,
   ApiNewMediaTodo,
   ApiNewPoll,
+  ApiPageBlockPhoto,
+  ApiPageBlockVideo,
   ApiPeer,
   ApiPhoto,
   ApiReaction,
@@ -124,7 +127,15 @@ export type PerformanceType = Record<PerformanceTypeKey, boolean>;
 export interface IThemeSettings {
   background?: string;
   backgroundColor?: string;
+  secondBackgroundColor?: string;
+  thirdBackgroundColor?: string;
+  fourthBackgroundColor?: string;
+  backgroundRotation?: number;
   patternColor?: string;
+  patternIntensity?: number;
+  // User-chosen 0–100 scale applied on top of the wallpaper's own intensity; `undefined` means the default
+  patternIntensityFactor?: number;
+  isPattern?: boolean;
   isBlurred?: boolean;
 }
 
@@ -139,6 +150,7 @@ export interface AccountSettings {
   hasWebNotifications: boolean;
   hasPushNotifications: boolean;
   hasContactJoinedNotifications?: boolean;
+  shouldNotifyAboutPinnedMessages: boolean;
   notificationSoundVolume: number;
   canAutoLoadPhotoFromContacts: boolean;
   canAutoLoadPhotoInPrivateChats: boolean;
@@ -156,11 +168,13 @@ export interface AccountSettings {
   shouldSuggestStickers: boolean;
   shouldSuggestCustomEmoji: boolean;
   shouldUpdateStickerSetOrder: boolean;
+  lastRecordMessageMode?: 'voice' | 'video';
   hasPassword?: boolean;
   isSensitiveEnabled?: boolean;
   canChangeSensitive?: boolean;
   shouldArchiveAndMuteNewNonContact?: boolean;
   shouldNewNonContactPeersRequirePremium?: boolean;
+  defaultHistoryTtl?: number;
   nonContactPeersPaidStars?: number;
   shouldDisplayGiftsButton?: boolean;
   disallowedGifts?: ApiDisallowedGiftsSettings;
@@ -198,6 +212,7 @@ export enum SettingsScreens {
   GeneralChatBackground,
   GeneralChatBackgroundColor,
   Privacy,
+  AutoDeleteMessages,
   PrivacyPhoneNumber,
   PrivacyAddByPhone,
   PrivacyLastSeen,
@@ -316,8 +331,6 @@ export enum RightColumnContent {
   BoostStatistics,
   MessageStatistics,
   StoryStatistics,
-  StickerSearch,
-  GifSearch,
   PollResults,
   AddingMembers,
   CreateTopic,
@@ -327,9 +340,20 @@ export enum RightColumnContent {
 }
 
 export type MediaViewerMedia = ApiPhoto | ApiVideo | ApiDocument;
+export type MediaViewerPageBlock = ApiPageBlockPhoto | ApiPageBlockVideo;
+export type MediaViewerPageMedia = {
+  blocks: MediaViewerPageBlock[];
+  sourceIds: string[];
+  pageUrl?: string;
+  chatId?: string;
+  messageId?: number;
+  threadId?: ThreadId;
+  isProtected?: boolean;
+};
 
 export enum MediaViewerOrigin {
   Inline,
+  Ephemeral,
   ScheduledInline,
   SharedMedia,
   ProfileAvatar,
@@ -344,6 +368,8 @@ export enum MediaViewerOrigin {
   PreviewMedia,
   SponsoredMessage,
   PollPreview,
+  RichPageBlock,
+  IVPageBlock,
 }
 
 export enum StoryViewerOrigin {
@@ -384,6 +410,7 @@ export enum ManagementProgress {
 export interface ManagementState {
   isActive: boolean;
   nextScreen?: ManagementScreens;
+  selectedChatMemberId?: string;
   checkedUsername?: string;
   isUsernameAvailable?: boolean;
   error?: string;
@@ -413,6 +440,7 @@ export type ProfileTabType =
   | 'audio'
   | 'voice'
   | 'gif'
+  | 'playlist'
   | 'stories'
   | 'storiesArchive'
   | 'similarChannels'
@@ -645,17 +673,25 @@ export interface ThreadLocalState {
 
   editingId?: number;
   editingScheduledId?: number;
-  editingDraft?: ApiFormattedText;
-  editingScheduledDraft?: ApiFormattedText;
+  editingDraft?: EditingDraft;
+  editingScheduledDraft?: EditingDraft;
 
   draft?: ApiDraft;
 
   noWebPage?: boolean;
 
-  typingStatus?: ApiTypingStatus;
+  typingStatusByPeerId?: Record<string, ApiTypingStatus>;
 
   typingDraftIdByRandomId?: Record<string, number>;
 }
+
+export type EditingDraft = (ApiFormattedText & {
+  richMessage?: never;
+}) | {
+  text?: never;
+  entities?: never;
+  richMessage: ApiInputRichMessage;
+};
 
 export interface Thread {
   localState: ThreadLocalState;
@@ -666,13 +702,13 @@ export interface Thread {
 export interface ServiceNotification {
   id: number;
   message: ApiMessage;
-  version?: string;
   isUnread?: boolean;
   isDeleted?: boolean;
 }
 
 export interface TopicsInfo {
   totalCount: number;
+  isCache?: true;
   topicsById: Record<ThreadId, ApiTopic>;
   listedTopicIds?: number[];
   orderedPinnedTopicIds?: number[];
@@ -768,6 +804,7 @@ export type SendMessageParams = {
   lastMessageId?: number;
   text?: string;
   entities?: ApiMessageEntity[];
+  richMessage?: ApiInputRichMessage;
   replyInfo?: ApiInputReplyInfo;
   suggestedPostInfo?: ApiInputSuggestedPostInfo;
   attachment?: ApiAttachment;
@@ -820,6 +857,7 @@ export type ForwardMessagesParams = {
   withMyScore?: boolean;
   noAuthors?: boolean;
   noCaptions?: boolean;
+  privateForwardName?: string;
   isCurrentUserPremium?: boolean;
   wasDrafted?: boolean;
   lastMessageId?: number;
