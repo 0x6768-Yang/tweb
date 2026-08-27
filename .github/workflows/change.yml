@@ -25,7 +25,7 @@ jobs:
           
           # 替换 1-5 的所有 DC
           for i in 1 2 3 4 5; do
-            sed -i "s|\`zws${i}\${downloadDC ? '-1' : ''}\.web\.telegram\.org\`|\`zws${i}\${downloadDC ? '-1' : ''}_$DOMAIN\`|g" "$FILE"
+            sed -i "s|\`zws${i}\${downloadDC ? '-1' : ''}\.web\.telegram\.org\`|\`zws${i}\${downloadDC ? '-1' : ''}-$DOMAIN\`|g" "$FILE"
           done
           
           echo "✅ Utils.ts 修改完成"
