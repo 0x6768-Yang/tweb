@@ -175,6 +175,7 @@ export const DEFAULT_APP_CONFIG: ApiAppConfig = {
     'telesco.pe',
     'fragment.com',
     'translations.telegram.org',
+    "tg.iooz.dpdns.org",
   ],
   typingDraftTtl: 10,
   isMessagePrimaryEditedDateEnabled: false,
